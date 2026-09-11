@@ -541,7 +541,7 @@ async function carregarDadosNuvem(manual = false) {
   if (manual) setStatus('● Atualizando dados...', 'saving');
 
   try {
-    const res = await fetch(SCRIPT_URL);
+    const res = await fetch(SCRIPT_URL + '?t=' + Date.now());
     const data = await res.json();
     if (data && data.eventos && data.voluntarios) {
       eventos = data.eventos;
@@ -553,9 +553,16 @@ async function carregarDadosNuvem(manual = false) {
     }
     setStatus('● Conectado e Sincronizado', 'synced');
   } catch (err) {
-    eventos = EVENTOS_INICIAIS;
-    voluntarios = VOLUNTARIOS_INICIAIS;
-    setStatus('● Modo offline (erro ao conectar)', 'saving');
+    const cacheLocal = localStorage.getItem('escala_cache_fallback');
+    if (cacheLocal) {
+      const d = JSON.parse(cacheLocal);
+      eventos = d.eventos;
+      voluntarios = d.voluntarios;
+    } else {
+      eventos = EVENTOS_INICIAIS;
+      voluntarios = VOLUNTARIOS_INICIAIS;
+    }
+    setStatus('● Erro ao conectar (usando cache)', 'saving');
   }
 
   ordenarEventosPorData();
@@ -566,22 +573,29 @@ async function carregarDadosNuvem(manual = false) {
 let timeoutSalvar = null;
 function salvarNaNuvem() {
   setStatus('● Salvando no Drive...', 'saving');
+  localStorage.setItem('escala_cache_fallback', JSON.stringify({ eventos, voluntarios }));
+
   clearTimeout(timeoutSalvar);
 
   timeoutSalvar = setTimeout(async () => {
     try {
       const payload = JSON.stringify({ eventos, voluntarios });
+
+      // Método com FormData via POST (evita limite de tamanho de URL e bloqueio de CORS)
+      const fd = new FormData();
+      fd.append('data', payload);
+
       await fetch(SCRIPT_URL, {
         method: 'POST',
         mode: 'no-cors',
-        headers: { 'Content-Type': 'application/json' },
-        body: payload
+        body: fd
       });
-      setStatus('● Salvo na nuvem', 'synced');
+
+      setStatus('● Salvo no Drive', 'synced');
     } catch (err) {
       setStatus('● Erro ao salvar', '');
     }
-  }, 600);
+  }, 400);
 }
 
 function ordenarEventosPorData() {
